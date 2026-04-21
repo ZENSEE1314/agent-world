@@ -11,12 +11,14 @@ from typing import Callable, Dict, List, Optional
 
 from . import market
 from .agent import Agent, House
-from .brain import brain_status, decide
+from .brain import brain_status, decide, write_content
 from .config import CFG
 from .economy import EconomyManager
 from .jobs import JOBS, list_jobs, run_job
 from .logger import log, recent, recent_for
 from .messaging import MessageBus
+from .paper_trading import BOOK as PAPER_BOOK, JOB_TO_COIN
+from .projects import KINDS as PROJECT_KINDS, STORE as PROJECT_STORE
 
 
 HOUSE_COLORS = ["#f6b6c3", "#f7d488", "#a6d4a1", "#9ecbe8",
@@ -168,6 +170,15 @@ class WorldEngine:
             "agents": agents,
             "jobs": list_jobs(),
             "market": market.snapshot(),
+            "paper": PAPER_BOOK.snapshot(),
+            "review_queue": [
+                {
+                    "id": p.id, "agent_id": p.agent_id, "agent_name": p.agent_name,
+                    "kind": p.kind, "topic": p.topic, "title": p.title,
+                    "body": p.body, "status": p.status, "created_at": p.created_at,
+                }
+                for p in PROJECT_STORE.list_pending(12)
+            ],
             "leaderboard": self.economy.leaderboard(),
             "messages": self.bus.recent(40),
             "logs": recent(80),
@@ -205,6 +216,20 @@ class WorldEngine:
 
         if action == "work":
             job_id = decision.get("job") or random.choice(list(JOBS.keys()))
+            # Crypto-style jobs route through paper trading at real Coingecko prices.
+            # Non-crypto jobs keep the old deterministic-ish RNG payout.
+            if job_id in JOB_TO_COIN:
+                cash = self.economy.get(agent.id).cash
+                pos = PAPER_BOOK.open_position(agent.id, job_id, cash, self.tick_no)
+                if pos is not None:
+                    log(agent.id, "work",
+                        f"{job_id}: opened paper {pos.coin} ${pos.size_usd:.2f} "
+                        f"@ ${pos.entry_price:.2f} (closes tick {pos.opened_tick+pos.hold_ticks})")
+                    agent.remember_action(f"opened:{job_id}")
+                    return
+                # Couldn't open (market unavailable or too poor) → fall through to safe job
+                job_id = "data_labeling"
+
             result = run_job(job_id, skill_multiplier=agent.skill_multiplier)
             if result.success:
                 self.economy.credit_work(agent.id, result.real_usd, reason=result.job)
@@ -293,11 +318,40 @@ class WorldEngine:
             return
 
         if action == "build_project":
-            topic = decision.get("topic") or random.choice(
-                ["notes", "plan", "log", "idea", "reflection"])
-            path = agent.build_project(topic)
-            log(agent.id, "build", f"shipped project → {path}")
-            agent.remember_action(f"built:{topic}")
+            topic = decision.get("topic") or random.choice([
+                "freelance pricing for solo developers",
+                "cold outreach to SaaS founders",
+                "how to evaluate a new memecoin in under 5 minutes",
+                "weekly notes: what I'd tell a junior engineer",
+                "one-page brief for a niche habit tracker",
+                "thread on building in public for lazy people",
+                "python script: rename a folder of files by pattern",
+            ])
+            # Pick a kind based on the topic word, or let the decision request one
+            hint = str(decision.get("kind") or "").lower()
+            if hint in PROJECT_KINDS:
+                kind = hint
+            elif "email" in topic.lower() or "outreach" in topic.lower():
+                kind = "cold_email"
+            elif "thread" in topic.lower():
+                kind = "tweet_thread"
+            elif "script" in topic.lower() or "python" in topic.lower() or "code" in topic.lower():
+                kind = "code_snippet"
+            elif "brief" in topic.lower() or "product" in topic.lower():
+                kind = "product_brief"
+            elif "note" in topic.lower():
+                kind = "note"
+            else:
+                kind = "article_draft"
+            body = write_content(kind, topic, agent.name)
+            title = topic.strip().capitalize()[:80]
+            proj = PROJECT_STORE.create(
+                agent_id=agent.id, agent_name=agent.name,
+                kind=kind, topic=topic, title=title, body=body,
+            )
+            agent.projects_built += 1
+            log(agent.id, "build", f"shipped {kind} → {proj.id} ({title})")
+            agent.remember_action(f"built:{kind}")
             return
 
         if action == "reflect":
@@ -321,11 +375,35 @@ class WorldEngine:
 
     async def tick(self) -> dict:
         self.tick_no += 1
-        # 1. Decay everyone first
+        # 1. Close any paper trades whose hold has elapsed. Real-market P&L is
+        #    fed back to each agent via the existing symmetric-loss pipeline.
+        closed = PAPER_BOOK.close_due(self.tick_no)
+        for c in closed:
+            agent = self.agents.get(c.agent_id)
+            if agent is None:
+                continue
+            self.economy.credit_work(agent.id, c.pnl_usd, reason=f"{c.job}:{c.coin}")
+            if c.pnl_usd >= 0:
+                agent.remember_outcome(f"win:+${c.pnl_usd:.2f}:{c.job}")
+                agent.nudge_skill(+0.015)
+                agent.append_memory("trade-log",
+                    f"{c.coin} ✓ +${c.pnl_usd:.2f} real ({c.entry_price:.2f}→{c.exit_price:.2f})")
+                log(agent.id, "earn",
+                    f"closed {c.coin} +${c.pnl_usd:.2f} "
+                    f"({c.entry_price:.2f}→{c.exit_price:.2f})")
+            else:
+                agent.remember_outcome(f"loss:${c.pnl_usd:.2f}:{c.job}")
+                agent.nudge_skill(-0.02)
+                agent.append_memory("trade-log",
+                    f"{c.coin} ✗ ${c.pnl_usd:.2f} real ({c.entry_price:.2f}→{c.exit_price:.2f})")
+                log(agent.id, "loss",
+                    f"closed {c.coin} ${c.pnl_usd:.2f} "
+                    f"({c.entry_price:.2f}→{c.exit_price:.2f})")
+        # 2. Decay everyone
         for agent in list(self.agents.values()):
             agent.decay()
-        # 2. Remove dead agents (but keep them in list for one tick so UI sees death)
-        # 3. Decide & act
+        # 3. Remove dead agents (but keep them in list for one tick so UI sees death)
+        # 4. Decide & act
         for agent in list(self.agents.values()):
             if not agent.alive:
                 continue

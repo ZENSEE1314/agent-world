@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ..engine.logger import recent, recent_for
+from ..engine.paper_trading import BOOK as PAPER_BOOK
+from ..engine.projects import STORE as PROJECT_STORE
 from ..engine.world import WORLD
 
 
@@ -75,3 +77,63 @@ def divine(body: DivineIn):
 @router.get("/healthz")
 def healthz():
     return {"ok": True, "tick": WORLD.tick_no, "agents": len(WORLD.agents)}
+
+
+# ---- paper trading ---------------------------------------------------------
+
+@router.get("/paper")
+def paper_book():
+    return PAPER_BOOK.snapshot()
+
+
+# ---- project review queue --------------------------------------------------
+
+class ReviewIn(BaseModel):
+    vote: str = Field(pattern=r"^(approve|reject)$")
+
+
+@router.get("/projects")
+def list_projects(status: Optional[str] = None, limit: int = 40):
+    if status == "pending":
+        items = PROJECT_STORE.list_pending(limit=limit)
+    else:
+        items = PROJECT_STORE.list_recent(limit=limit)
+        if status in ("approved", "rejected"):
+            items = [p for p in items if p.status == status]
+    return {"items": [
+        {
+            "id": p.id, "agent_id": p.agent_id, "agent_name": p.agent_name,
+            "kind": p.kind, "topic": p.topic, "title": p.title,
+            "body": p.body, "status": p.status,
+            "created_at": p.created_at, "reviewed_at": p.reviewed_at,
+        }
+        for p in items
+    ]}
+
+
+@router.get("/projects/{pid}")
+def get_project(pid: str):
+    p = PROJECT_STORE.get(pid)
+    if p is None:
+        raise HTTPException(404, "project not found")
+    return {
+        "id": p.id, "agent_id": p.agent_id, "agent_name": p.agent_name,
+        "kind": p.kind, "topic": p.topic, "title": p.title,
+        "body": p.body, "status": p.status,
+        "created_at": p.created_at, "reviewed_at": p.reviewed_at,
+    }
+
+
+@router.post("/projects/{pid}/review")
+def review_project(pid: str, body: ReviewIn):
+    p = PROJECT_STORE.review(pid, body.vote)
+    if p is None:
+        raise HTTPException(404, "project not found")
+    # Nudge the author's skill floor based on the verdict — they learn from YOUR taste.
+    agent = WORLD.agents.get(p.agent_id)
+    if agent is not None:
+        if body.vote == "approve":
+            agent.nudge_skill(+0.05)
+        else:
+            agent.nudge_skill(-0.03)
+    return {"ok": True, "status": p.status}
