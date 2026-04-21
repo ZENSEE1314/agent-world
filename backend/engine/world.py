@@ -9,8 +9,9 @@ from pathlib import Path
 from threading import Lock
 from typing import Callable, Dict, List, Optional
 
+from . import market
 from .agent import Agent, House
-from .brain import decide
+from .brain import brain_status, decide
 from .config import CFG
 from .economy import EconomyManager
 from .jobs import JOBS, list_jobs, run_job
@@ -160,11 +161,13 @@ class WorldEngine:
             "started_at": self.started_at,
             "now": time.time(),
             "brain": CFG.brain,
+            "brain_status": brain_status(),
             "sim_speed": CFG.sim_speed,
             "tick_seconds": CFG.tick_seconds,
             "houses": houses,
             "agents": agents,
             "jobs": list_jobs(),
+            "market": market.snapshot(),
             "leaderboard": self.economy.leaderboard(),
             "messages": self.bus.recent(40),
             "logs": recent(80),
@@ -192,6 +195,8 @@ class WorldEngine:
             "inbox": inbox,
             "jobs": list(JOBS.keys()),
             "recent_actions": agent.recent_actions,
+            "recent_outcomes": agent.recent_outcomes,
+            "market": market.snapshot(),
         }
 
     def _apply_decision(self, agent: Agent, decision: dict) -> None:
@@ -204,11 +209,21 @@ class WorldEngine:
             if result.success:
                 self.economy.credit_work(agent.id, result.real_usd, reason=result.job)
                 agent.remember_action(f"worked:{job_id}")
+                agent.remember_outcome(f"win:+${result.real_usd:.2f}:{job_id}")
+                agent.nudge_skill(+0.015)
                 agent.append_memory("work-log",
                     f"{job_id} ✓ +${result.real_usd:.2f} real ({result.note})")
+            elif result.real_usd < 0:
+                self.economy.credit_work(agent.id, result.real_usd, reason=result.job)
+                agent.remember_action(f"lost:{job_id}")
+                agent.remember_outcome(f"loss:${result.real_usd:.2f}:{job_id}")
+                agent.nudge_skill(-0.02)
+                agent.append_memory("work-log",
+                    f"{job_id} ✗ lost ${-result.real_usd:.2f} real ({result.note})")
             else:
                 log(agent.id, "work", f"{job_id} failed — {result.note}")
                 agent.remember_action(f"work-fail:{job_id}")
+                agent.remember_outcome(f"fail:$0:{job_id}")
                 agent.append_memory("work-log", f"{job_id} ✗ {result.note}")
             return
 
@@ -283,6 +298,22 @@ class WorldEngine:
             path = agent.build_project(topic)
             log(agent.id, "build", f"shipped project → {path}")
             agent.remember_action(f"built:{topic}")
+            return
+
+        if action == "reflect":
+            topic = decision.get("topic") or "general"
+            wins = [o for o in agent.recent_outcomes if o.startswith("win:")]
+            losses = [o for o in agent.recent_outcomes if o.startswith("loss:")]
+            summary = (
+                f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Reflection on {topic}: "
+                f"{len(wins)} wins, {len(losses)} losses in last 20 actions. "
+                f"Cash ${self.economy.get(agent.id).cash}. "
+                f"Skill floor {agent.skill_floor:.2f}. "
+                f"Note: {decision.get('reason', '')[:120]}"
+            )
+            agent.write_reflection(topic, summary)
+            log(agent.id, "reflect", f"wrote reflection on {topic}")
+            agent.remember_action(f"reflect:{topic}")
             return
 
         # idle

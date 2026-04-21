@@ -51,11 +51,40 @@ function render() {
   if (!state.snapshot) return;
   drawWorld();
   drawTopbar();
+  drawMarketBar();
   drawLeaderboard();
   drawAgentsList();
   drawLogs();
   drawChat();
   drawDivineHistory();
+}
+
+function drawMarketBar() {
+  const s = state.snapshot;
+  const el = document.getElementById("market-bar");
+  if (!el) return;
+  const market = s.market || {};
+  const syms = Object.keys(market);
+  const pills = syms.map(sym => {
+    const d = market[sym];
+    const chg = d.change_24h_pct || 0;
+    const cls = chg > 0.05 ? "up" : chg < -0.05 ? "down" : "flat";
+    const sign = chg >= 0 ? "+" : "";
+    return `<span class="market-pill">
+      <span class="sym">${sym}</span>
+      <span class="price">$${d.price_usd.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+      <span class="chg ${cls}">${sign}${chg.toFixed(2)}%</span>
+    </span>`;
+  }).join("");
+  let brainLabel = s.brain || "—";
+  let brainClass = "";
+  const bs = s.brain_status || {};
+  if (s.brain === "ollama") {
+    if (bs.pulling) { brainLabel = `ollama · pulling ${bs.ollama_model || ""}`; brainClass = "warn"; }
+    else if (bs.model_ready) { brainLabel = `ollama · ${bs.ollama_model || ""} ready`; }
+    else { brainLabel = `ollama · ${bs.ollama_model || ""} warming up`; brainClass = "warn"; }
+  }
+  el.innerHTML = pills + `<span class="brain-pill ${brainClass}">brain: ${escapeHtml(brainLabel)}</span>`;
 }
 
 function drawTopbar() {
