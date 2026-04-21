@@ -148,4 +148,13 @@ class ProjectStore:
             }
 
 
+    def reset(self) -> None:
+        """Wipe the in-memory index AND the persisted _index.json on disk."""
+        with self._lock:
+            self._items.clear()
+            self._order.clear()
+            self._counter = 0
+            self._persist()
+
+
 STORE = ProjectStore()

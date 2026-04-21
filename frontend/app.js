@@ -427,7 +427,7 @@ function drawLogs() {
   const lines = s.logs.slice(-40).reverse();
   el.innerHTML = lines.map(l => {
     const tag = (l.kind || "info").toLowerCase();
-    return `<div class="log-line"><span class="tag tag-${tag}">${tag}</span><b>${escapeHtml(l.agent)}</b> ${escapeHtml(l.msg)}</div>`;
+    return `<div class="log-line ${tag}"><span class="tag tag-${tag}">${tag}</span><b>${escapeHtml(l.agent)}</b> ${escapeHtml(l.msg)}</div>`;
   }).join("");
 }
 
@@ -517,6 +517,22 @@ $("#divine-form").addEventListener("submit", async (e) => {
     body: JSON.stringify({ text }),
   });
   $("#divine-text").value = "";
+});
+
+$("#btn-reset").addEventListener("click", async () => {
+  if (!confirm("Reset world? Wipes all cash, paper trades, projects, logs, and chat — agents themselves stay.")) return;
+  const btn = $("#btn-reset");
+  btn.disabled = true;
+  btn.textContent = "resetting...";
+  try {
+    await fetch("/api/reset", { method: "POST" });
+    const s = await fetch("/api/state").then(r => r.json());
+    state.snapshot = s;
+    render();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔥 Reset World";
+  }
 });
 
 // close modal on outside click

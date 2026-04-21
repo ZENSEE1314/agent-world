@@ -52,3 +52,8 @@ def recent(n: int = 100) -> List[dict]:
 def recent_for(agent_id: str, n: int = 50) -> List[dict]:
     with _lock:
         return [e for e in _ring if e["agent"] == agent_id][-n:]
+
+
+def reset() -> None:
+    with _lock:
+        _ring.clear()

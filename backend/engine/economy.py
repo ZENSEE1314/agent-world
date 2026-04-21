@@ -37,6 +37,12 @@ class EconomyManager:
         with self._lock:
             self._ledgers.pop(agent_id, None)
 
+    def reset_all(self) -> None:
+        """Reset every registered agent back to starting cash and zero history."""
+        with self._lock:
+            for aid in list(self._ledgers.keys()):
+                self._ledgers[aid] = Ledger()
+
     # ---- transactions -------------------------------------------------------
 
     def credit_work(self, agent_id: str, real_usd: float, reason: str = "work") -> int:
