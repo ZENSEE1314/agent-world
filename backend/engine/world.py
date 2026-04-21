@@ -46,6 +46,7 @@ class WorldEngine:
         self.tick_no: int = 0
         self.started_at: float = time.time()
         self.divine_commands: List[dict] = []
+        self.paused: bool = False
         self._lock = Lock()
         self._listeners: List[Callable[[dict], None]] = []
         self._seed_world()
@@ -198,6 +199,7 @@ class WorldEngine:
             "tick": self.tick_no,
             "started_at": self.started_at,
             "now": time.time(),
+            "paused": self.paused,
             "brain": CFG.brain,
             "brain_status": brain_status(),
             "sim_speed": CFG.sim_speed,
@@ -419,14 +421,21 @@ class WorldEngine:
         # first tick kicks off a storm of synchronous LLM calls on the event loop.
         await asyncio.sleep(5)
         while True:
-            try:
-                # Run the tick body in a thread pool — decide() / market calls /
-                # Ollama http are sync blocking, and running them directly on
-                # the loop starves FastAPI handlers (including the healthcheck).
-                await asyncio.to_thread(self._tick_sync)
-            except Exception as e:
-                log("world", "error", f"tick crashed: {e}")
+            if not self.paused:
+                try:
+                    # Run the tick body in a thread pool — decide() / market calls /
+                    # Ollama http are sync blocking, and running them directly on
+                    # the loop starves FastAPI handlers (including the healthcheck).
+                    await asyncio.to_thread(self._tick_sync)
+                except Exception as e:
+                    log("world", "error", f"tick crashed: {e}")
             await asyncio.sleep(CFG.tick_seconds)
+
+    def set_paused(self, paused: bool) -> dict:
+        self.paused = bool(paused)
+        log("world", "info", "paused" if self.paused else "resumed")
+        self._emit_event({"type": "pause_change", "paused": self.paused})
+        return {"ok": True, "paused": self.paused}
 
     def _tick_sync(self) -> None:
         """Synchronous tick body — safe to run in a worker thread."""

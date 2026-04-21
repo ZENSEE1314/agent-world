@@ -79,6 +79,15 @@ def reset_world():
     return WORLD.reset_world()
 
 
+class PauseIn(BaseModel):
+    paused: bool
+
+
+@router.post("/pause")
+def pause_world(body: PauseIn):
+    return WORLD.set_paused(body.paused)
+
+
 @router.get("/healthz")
 def healthz():
     return {"ok": True, "tick": WORLD.tick_no, "agents": len(WORLD.agents)}

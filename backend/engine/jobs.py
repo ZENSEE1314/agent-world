@@ -30,22 +30,6 @@ JOBS: Dict[str, dict] = {
         "base": 30.0, "rate": 0.25, "sd": 45.0, "can_lose": True, "coin": "DOGE",
         "desc": "Chase a trending memecoin — huge upside, huge downside",
     },
-    "freelance_code": {
-        "base": 24.0, "rate": 0.72, "sd": 6.0, "can_lose": False, "coin": None,
-        "desc": "Small bug-fix or script gig on a freelance board",
-    },
-    "content_writing": {
-        "base": 6.0, "rate": 0.86, "sd": 1.5, "can_lose": False, "coin": None,
-        "desc": "Short article or blog post",
-    },
-    "data_labeling": {
-        "base": 3.0, "rate": 0.95, "sd": 0.5, "can_lose": False, "coin": None,
-        "desc": "Steady, boring, almost-guaranteed piecework",
-    },
-    "build_micro_saas": {
-        "base": 65.0, "rate": 0.15, "sd": 45.0, "can_lose": False, "coin": None,
-        "desc": "Long shot — build and launch a micro-SaaS",
-    },
 }
 
 

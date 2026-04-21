@@ -170,8 +170,8 @@ h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 .agent-card .cash { font-family: ui-monospace, Menlo, monospace; color: var(--gold); font-weight: 600; }
 .bars { display: grid; gap: 4px; }
 .bar { display: grid; grid-template-columns: 48px 1fr 32px; align-items: center; gap: 6px; font-size: 10px; color: var(--ink-dim); }
-.bar .track { background: rgba(255,255,255,.08); border-radius: 999px; height: 8px; overflow: hidden; }
-.bar .fill { height: 100%; border-radius: 999px; transition: width .4s ease; }
+.bar .track { display: block; background: rgba(255,255,255,.08); border-radius: 999px; height: 8px; overflow: hidden; position: relative; }
+.bar .fill { display: block; height: 100%; border-radius: 999px; transition: width .4s ease; min-width: 2px; }
 .bar.health .fill { background: linear-gradient(90deg, #4ade80, #22d3ee); }
 .bar.hunger .fill { background: linear-gradient(90deg, #fbbf24, #fb923c); }
 .bar.health.low .fill { background: linear-gradient(90deg, #f87171, #ef4444); }
@@ -227,16 +227,40 @@ h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 .divine-history { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--ink-dim); max-height: 120px; overflow-y: auto; }
 .divine-history .d { padding: 4px 8px; background: rgba(252,211,77,.08); border-left: 2px solid var(--gold); border-radius: 0 6px 6px 0; }
 
-.reset-btn {
-  margin-top: 10px; width: 100%;
-  background: transparent;
-  border: 1px solid rgba(248,113,113,.4);
-  color: #fca5a5;
+.world-controls { display: flex; gap: 8px; margin-top: 10px; }
+.control-btn {
+  flex: 1;
   padding: 8px 12px; border-radius: 8px;
   font-size: 12px; cursor: pointer;
   transition: background .15s ease, color .15s ease;
 }
+.pause-btn {
+  background: transparent;
+  border: 1px solid rgba(122,162,255,.4);
+  color: var(--accent);
+}
+.pause-btn:hover { background: rgba(122,162,255,.12); color: #bfdbfe; }
+.pause-btn.paused {
+  background: rgba(74,222,128,.12);
+  border-color: rgba(74,222,128,.5);
+  color: var(--good);
+}
+.reset-btn {
+  background: transparent;
+  border: 1px solid rgba(248,113,113,.4);
+  color: #fca5a5;
+}
 .reset-btn:hover { background: rgba(248,113,113,.12); color: #fecaca; }
+.pause-banner {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  padding: 6px 16px; border-radius: 999px;
+  background: rgba(251,191,36,.15);
+  border: 1px solid rgba(251,191,36,.5);
+  color: var(--warn);
+  font-size: 12px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
+  z-index: 5;
+}
 
 /* -------- paper trading -------- */
 .paper-open { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }

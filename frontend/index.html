@@ -26,7 +26,8 @@
 <div id="market-bar" class="market-bar"></div>
 
 <main class="layout">
-  <section class="world">
+  <section class="world" style="position: relative;">
+    <div id="pause-banner" class="pause-banner" style="display: none;">⏸ Paused</div>
     <div class="world-toolbar">
       <h2>World</h2>
       <div class="tools">
@@ -77,7 +78,10 @@
         <button type="submit">Proclaim</button>
       </form>
       <div id="divine-history" class="divine-history"></div>
-      <button id="btn-reset" class="reset-btn" type="button">🔥 Reset World</button>
+      <div class="world-controls">
+        <button id="btn-pause" class="control-btn pause-btn" type="button">⏸ Pause</button>
+        <button id="btn-reset" class="reset-btn control-btn" type="button">🔥 Reset World</button>
+      </div>
     </section>
   </aside>
 </main>

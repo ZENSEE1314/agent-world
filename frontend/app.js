@@ -186,6 +186,19 @@ function drawTopbar() {
   $("#m-alive").textContent = `${alive}/${s.agents.length}`;
   const totalReal = s.agents.reduce((acc, a) => acc + (a.real_usd || 0), 0);
   $("#m-real").textContent = `$${totalReal.toFixed(2)}`;
+
+  const pauseBtn = document.getElementById("btn-pause");
+  const banner = document.getElementById("pause-banner");
+  if (pauseBtn) {
+    if (s.paused) {
+      pauseBtn.textContent = "▶ Resume";
+      pauseBtn.classList.add("paused");
+    } else {
+      pauseBtn.textContent = "⏸ Pause";
+      pauseBtn.classList.remove("paused");
+    }
+  }
+  if (banner) banner.style.display = s.paused ? "block" : "none";
 }
 
 // -------- World canvas
@@ -517,6 +530,21 @@ $("#divine-form").addEventListener("submit", async (e) => {
     body: JSON.stringify({ text }),
   });
   $("#divine-text").value = "";
+});
+
+$("#btn-pause").addEventListener("click", async () => {
+  const nowPaused = !(state.snapshot && state.snapshot.paused);
+  try {
+    await fetch("/api/pause", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paused: nowPaused }),
+    });
+    if (state.snapshot) {
+      state.snapshot.paused = nowPaused;
+      drawTopbar();
+    }
+  } catch (err) { console.error(err); }
 });
 
 $("#btn-reset").addEventListener("click", async () => {

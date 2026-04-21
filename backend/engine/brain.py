@@ -117,10 +117,14 @@ def _mock_decide(ctx: dict) -> dict:
     if hunger < 30 and cash >= 300:
         return {"action": "eat", "reason": "hunger critical"}
 
-    # urgent: no cash + hungry → work safe job
+    # urgent: no cash + hungry → ask a peer for a gift or idle; no safe work left
     if cash < 300 and hunger < 50:
-        return {"action": "work", "job": "data_labeling",
-                "reason": "need cash for food, picking safe job"}
+        peers = ctx.get("peers", [])
+        if peers:
+            return {"action": "chat", "target": random.choice(peers),
+                    "text": "I'm running low — can anyone spare $300 for food?",
+                    "reason": "need cash for food"}
+        return {"action": "idle", "reason": "broke and alone, waiting out"}
 
     # inbox-driven: help a peer who asked
     for msg in ctx.get("inbox", []):
@@ -172,18 +176,23 @@ def _mock_decide(ctx: dict) -> dict:
         return snap.get(coin, {}).get("change_24h_pct", 0.0)
 
     btc, eth, doge = trend("BTC"), trend("ETH"), trend("DOGE")
-    if cash > 1200 and btc > 0.3:
-        job = "crypto_trade"
-    elif cash > 1200 and eth > 0.5:
-        job = "defi_arbitrage"
-    elif cash > 2500 and doge > 3.0:
-        job = "memecoin_sniping"  # only when we can afford the hit
-    elif cash > 2500:
-        job = random.choice(["freelance_code", "build_micro_saas", "content_writing"])
-    else:
-        job = random.choice(["data_labeling", "content_writing", "freelance_code"])
-    return {"action": "work", "job": job,
-            "reason": f"btc {btc:+.1f}% eth {eth:+.1f}% doge {doge:+.1f}%"}
+    # Pure paper trading — only open a position when at least one coin looks decent.
+    best = max((btc, "crypto_trade"), (eth, "defi_arbitrage"),
+               (doge * 0.5, "memecoin_sniping"))  # doge discount: higher variance
+    best_trend, best_job = best
+    if cash > 1200 and best_trend > 0.2:
+        return {"action": "work", "job": best_job,
+                "reason": f"btc {btc:+.1f}% eth {eth:+.1f}% doge {doge:+.1f}% "
+                          f"→ pick {best_job}"}
+    # Nothing looks good → build something reviewable instead.
+    return {"action": "build_project",
+            "topic": random.choice([
+                "freelance pricing for solo developers",
+                "cold outreach to SaaS founders",
+                "how to evaluate a new memecoin in under 5 minutes",
+                "one-page brief for a niche habit tracker",
+            ]),
+            "reason": f"no clear trend (btc {btc:+.1f}%, eth {eth:+.1f}%), writing instead"}
 
 
 # ------------------------------------------------------------------ LLM adapters
