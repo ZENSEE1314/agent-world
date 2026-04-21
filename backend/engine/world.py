@@ -410,9 +410,28 @@ class WorldEngine:
         agent.remember_action("idle")
 
     async def tick(self) -> dict:
+        """Async wrapper so existing callers still work. Body runs in a thread."""
+        await asyncio.to_thread(self._tick_sync)
+        return self.snapshot()
+
+    async def run_forever(self) -> None:
+        # Brief grace period so the healthcheck can hit /api/healthz before the
+        # first tick kicks off a storm of synchronous LLM calls on the event loop.
+        await asyncio.sleep(5)
+        while True:
+            try:
+                # Run the tick body in a thread pool — decide() / market calls /
+                # Ollama http are sync blocking, and running them directly on
+                # the loop starves FastAPI handlers (including the healthcheck).
+                await asyncio.to_thread(self._tick_sync)
+            except Exception as e:
+                log("world", "error", f"tick crashed: {e}")
+            await asyncio.sleep(CFG.tick_seconds)
+
+    def _tick_sync(self) -> None:
+        """Synchronous tick body — safe to run in a worker thread."""
         self.tick_no += 1
-        # 1. Close any paper trades whose hold has elapsed. Real-market P&L is
-        #    fed back to each agent via the existing symmetric-loss pipeline.
+        # 1. Close due paper trades (hits Coingecko; blocking OK in thread)
         closed = PAPER_BOOK.close_due(self.tick_no)
         for c in closed:
             agent = self.agents.get(c.agent_id)
@@ -435,11 +454,10 @@ class WorldEngine:
                 log(agent.id, "loss",
                     f"closed {c.coin} ${c.pnl_usd:.2f} "
                     f"({c.entry_price:.2f}→{c.exit_price:.2f})")
-        # 2. Decay everyone
+        # 2. Decay
         for agent in list(self.agents.values()):
             agent.decay()
-        # 3. Remove dead agents (but keep them in list for one tick so UI sees death)
-        # 4. Decide & act
+        # 3. Decide + act
         for agent in list(self.agents.values()):
             if not agent.alive:
                 continue
@@ -453,20 +471,8 @@ class WorldEngine:
                 self._apply_decision(agent, decision)
             except Exception as e:
                 log(agent.id, "error", f"action crashed: {e}")
-        # 4. Clean up the truly dead
-        dead = [aid for aid, a in self.agents.items() if not a.alive]
-        # Keep them in the world but frozen — the UI shows them as tombstones.
         snap = self.snapshot()
         self._emit_event({"type": "tick", "snapshot": snap})
-        return snap
-
-    async def run_forever(self) -> None:
-        while True:
-            try:
-                await self.tick()
-            except Exception as e:
-                log("world", "error", f"tick crashed: {e}")
-            await asyncio.sleep(CFG.tick_seconds)
 
 
 # Global singleton
