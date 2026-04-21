@@ -189,15 +189,30 @@ h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
   line-height: 1.55;
   display: flex; flex-direction: column; gap: 2px;
 }
-.log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-line {
+  white-space: normal;
+  word-break: break-word;
+  padding: 2px 4px;
+  border-left: 2px solid rgba(255,255,255,0.06);
+}
+.log-line b { color: var(--ink); margin-right: 4px; }
+.log-line.earn { border-left-color: #4ade80; }
+.log-line.loss { border-left-color: #f87171; }
+.log-line.death { border-left-color: #ef4444; }
+.log-line.divine { border-left-color: var(--gold); }
 .log-line .tag { display: inline-block; min-width: 56px; padding: 1px 6px; border-radius: 4px; font-size: 10px; margin-right: 6px; background: var(--panel-2); }
 .tag-earn { background: #1d5b3e; color: #a7f3d0; }
+.tag-loss { background: #7f1d1d; color: #fecaca; }
 .tag-buy  { background: #3b2f6b; color: #ddd6fe; }
 .tag-work { background: #1e3a8a; color: #bfdbfe; }
 .tag-death{ background: #7f1d1d; color: #fecaca; }
 .tag-birth{ background: #064e3b; color: #a7f3d0; }
 .tag-teach{ background: #4c2c75; color: #e9d5ff; }
+.tag-reflect{background: #065f46; color: #a7f3d0; }
+.tag-build{ background: #374151; color: #e5e7eb; }
+.tag-transfer{ background: #1e3a8a; color: #bfdbfe; }
 .tag-divine{background: #713f12; color: #fde68a; }
+.tag-spawn{ background: #4c2c75; color: #e9d5ff; }
 .tag-info { background: var(--panel-2); color: var(--ink-dim); }
 .chat-line { padding: 4px 6px; border-left: 2px solid var(--accent); background: rgba(122,162,255,.06); border-radius: 0 6px 6px 0; }
 .chat-line .who { color: var(--accent); font-weight: 600; }
@@ -211,6 +226,17 @@ h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 .divine-form button { background: linear-gradient(135deg, #fcd34d, #fb923c); border: 0; color: #1b1203; font-weight: 700; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
 .divine-history { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--ink-dim); max-height: 120px; overflow-y: auto; }
 .divine-history .d { padding: 4px 8px; background: rgba(252,211,77,.08); border-left: 2px solid var(--gold); border-radius: 0 6px 6px 0; }
+
+.reset-btn {
+  margin-top: 10px; width: 100%;
+  background: transparent;
+  border: 1px solid rgba(248,113,113,.4);
+  color: #fca5a5;
+  padding: 8px 12px; border-radius: 8px;
+  font-size: 12px; cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.reset-btn:hover { background: rgba(248,113,113,.12); color: #fecaca; }
 
 /* -------- paper trading -------- */
 .paper-open { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }

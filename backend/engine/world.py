@@ -128,6 +128,42 @@ class WorldEngine:
             self.bus.forget(agent_id)
         log("world", "remove", f"agent {agent_id} removed")
 
+    def reset_world(self) -> dict:
+        """Wipe all accumulated state — ledgers, paper book, projects, messages,
+        logs, agent stats — but keep houses + agents identities so the world
+        layout survives. Tick counter resets to 0."""
+        from . import logger as _logger
+        with self._lock:
+            self.tick_no = 0
+            self.started_at = time.time()
+            self.divine_commands.clear()
+            # Agents keep identity but lose everything earned
+            for a in self.agents.values():
+                a.health = float(CFG.max_health)
+                a.hunger = float(CFG.max_hunger)
+                a.alive = True
+                a.skill_multiplier = 1.0
+                a.skill_floor = 1.0
+                a.mentor_ticks = 0
+                a.recent_actions.clear()
+                a.recent_outcomes.clear()
+                a.projects_built = 0
+                a.reflections_written = 0
+                a.knowledge_requests_sent = 0
+                a.knowledge_requests_answered = 0
+                a.last_action = "idle"
+            self.economy.reset_all()
+            self.bus.reset()
+            for aid in self.agents:
+                self.bus.ensure_inbox(aid)
+            PAPER_BOOK.reset()
+            PROJECT_STORE.reset()
+            _logger.reset()
+        log("world", "reset", "world state wiped — fresh start")
+        snap = self.snapshot()
+        self._emit_event({"type": "reset", "snapshot": snap})
+        return {"ok": True, "tick": self.tick_no, "agents": len(self.agents)}
+
     def divine_command(self, text: str) -> dict:
         entry = {"ts": time.time(), "text": text}
         self.divine_commands.append(entry)

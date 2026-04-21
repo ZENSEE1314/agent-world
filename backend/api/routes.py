@@ -74,6 +74,11 @@ def divine(body: DivineIn):
     return {"ok": True, "entry": entry}
 
 
+@router.post("/reset")
+def reset_world():
+    return WORLD.reset_world()
+
+
 @router.get("/healthz")
 def healthz():
     return {"ok": True, "tick": WORLD.tick_no, "agents": len(WORLD.agents)}

@@ -186,4 +186,11 @@ class PaperTradingBook:
         return {"open": open_list, "recent_closed": closed_list}
 
 
+    def reset(self) -> None:
+        with self._lock:
+            self._open.clear()
+            self._closed.clear()
+            self._counter = 0
+
+
 BOOK = PaperTradingBook()

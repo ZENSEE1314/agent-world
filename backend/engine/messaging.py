@@ -62,3 +62,8 @@ class MessageBus:
     def forget(self, agent_id: str) -> None:
         with self._lock:
             self._inbox.pop(agent_id, None)
+
+    def reset(self) -> None:
+        with self._lock:
+            self._inbox.clear()
+            self._all.clear()
