@@ -212,6 +212,67 @@ h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 .divine-history { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--ink-dim); max-height: 120px; overflow-y: auto; }
 .divine-history .d { padding: 4px 8px; background: rgba(252,211,77,.08); border-left: 2px solid var(--gold); border-radius: 0 6px 6px 0; }
 
+/* -------- paper trading -------- */
+.paper-open { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+.pos-row {
+  display: grid;
+  grid-template-columns: 56px 1fr 80px 72px;
+  align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 8px;
+  background: rgba(255,255,255,.03);
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, monospace;
+}
+.pos-row .coin { font-weight: 700; }
+.pos-row .who { color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; }
+.pos-row .price { text-align: right; color: var(--ink-dim); }
+.pos-row .pnl { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pos-row .pnl.up { color: var(--good); }
+.pos-row .pnl.down { color: var(--bad); }
+.pos-row .pnl.flat { color: var(--ink-dim); }
+.paper-empty { font-size: 11px; color: var(--ink-dim); font-style: italic; padding: 4px; }
+
+/* -------- review queue -------- */
+.queue-count {
+  display: inline-block; margin-left: 6px;
+  background: var(--accent-2); color: white;
+  padding: 1px 8px; border-radius: 999px; font-size: 10px;
+  font-weight: 700;
+}
+.review-queue { display: flex; flex-direction: column; gap: 8px; max-height: 520px; overflow-y: auto; }
+.review-card {
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 12px;
+}
+.review-card .rhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.review-card .rtitle { font-weight: 700; font-size: 13px; color: var(--ink); }
+.review-card .rmeta { font-size: 10px; color: var(--ink-dim); margin-bottom: 6px; }
+.review-card .rkind { display: inline-block; padding: 1px 6px; border-radius: 6px; background: var(--panel-2); color: var(--accent); font-size: 10px; margin-right: 4px; }
+.review-card .rbody {
+  background: rgba(0,0,0,.3);
+  padding: 8px; border-radius: 6px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px; line-height: 1.5;
+  max-height: 140px; overflow-y: auto;
+  white-space: pre-wrap;
+  margin-bottom: 8px;
+}
+.review-card .ractions { display: flex; gap: 6px; }
+.review-card button {
+  flex: 1; padding: 5px 8px; border-radius: 6px; border: 0; cursor: pointer;
+  font-size: 11px; font-weight: 600;
+}
+.review-card .approve { background: #1d5b3e; color: #a7f3d0; }
+.review-card .approve:hover { background: #166534; }
+.review-card .reject { background: #7f1d1d; color: #fecaca; }
+.review-card .reject:hover { background: #991b1b; }
+.review-card .copy { background: var(--panel-2); color: var(--ink); }
+.review-card .copy:hover { background: var(--accent); color: white; }
+.review-empty { font-size: 11px; color: var(--ink-dim); font-style: italic; padding: 8px; }
+
 /* -------- modals -------- */
 .modal {
   position: fixed; inset: 0;

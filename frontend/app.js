@@ -53,11 +53,102 @@ function render() {
   drawTopbar();
   drawMarketBar();
   drawLeaderboard();
+  drawPaperOpen();
+  drawReviewQueue();
   drawAgentsList();
   drawLogs();
   drawChat();
   drawDivineHistory();
 }
+
+// -------- Open paper positions
+function drawPaperOpen() {
+  const s = state.snapshot;
+  const el = document.getElementById("paper-open");
+  if (!el) return;
+  const open = (s.paper && s.paper.open) || [];
+  if (open.length === 0) {
+    el.innerHTML = `<div class="paper-empty">No open positions. Crypto jobs open paper trades at live Coingecko prices.</div>`;
+    return;
+  }
+  el.innerHTML = open.map(p => {
+    const pnl = p.unrealized_pnl || 0;
+    const cls = pnl > 0.01 ? "up" : pnl < -0.01 ? "down" : "flat";
+    const sign = pnl >= 0 ? "+" : "";
+    return `<div class="pos-row">
+      <span class="coin">${p.coin}</span>
+      <span class="who">${escapeHtml(p.agent)} · $${p.size_usd.toFixed(2)}</span>
+      <span class="price">$${p.entry_price.toFixed(2)} → $${p.current_price.toFixed(2)}</span>
+      <span class="pnl ${cls}">${sign}$${pnl.toFixed(2)}</span>
+    </div>`;
+  }).join("");
+}
+
+// -------- Review queue
+async function voteOnProject(pid, vote) {
+  try {
+    await fetch(`/api/projects/${encodeURIComponent(pid)}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vote }),
+    });
+    // Optimistic update — remove this card; snapshot will catch up
+    if (state.snapshot && state.snapshot.review_queue) {
+      state.snapshot.review_queue = state.snapshot.review_queue.filter(p => p.id !== pid);
+      drawReviewQueue();
+    }
+  } catch (err) { console.error(err); }
+}
+
+function copyProjectBody(pid, btn) {
+  const proj = (state.snapshot && state.snapshot.review_queue || []).find(p => p.id === pid);
+  if (!proj) return;
+  navigator.clipboard.writeText(proj.body).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = "copied!";
+    setTimeout(() => { btn.textContent = orig; }, 1200);
+  });
+}
+
+function drawReviewQueue() {
+  const s = state.snapshot;
+  const el = document.getElementById("review-queue");
+  const countEl = document.getElementById("queue-count");
+  if (!el) return;
+  const q = s.review_queue || [];
+  if (countEl) countEl.textContent = q.length ? q.length : "";
+  if (q.length === 0) {
+    el.innerHTML = `<div class="review-empty">Nothing pending. Agents ship new artifacts when they pick "build_project".</div>`;
+    return;
+  }
+  el.innerHTML = q.map(p => `
+    <div class="review-card" data-id="${p.id}">
+      <div class="rhead">
+        <span class="rtitle">${escapeHtml(p.title)}</span>
+      </div>
+      <div class="rmeta">
+        <span class="rkind">${p.kind}</span>
+        by ${escapeHtml(p.agent_name)} · ${new Date(p.created_at * 1000).toLocaleTimeString()}
+      </div>
+      <div class="rbody">${escapeHtml(p.body)}</div>
+      <div class="ractions">
+        <button class="approve" data-action="approve" data-id="${p.id}">👍 Approve</button>
+        <button class="reject"  data-action="reject"  data-id="${p.id}">👎 Reject</button>
+        <button class="copy"    data-action="copy"    data-id="${p.id}">📋 Copy</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+// Delegated click handler for review-queue buttons
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".ractions button");
+  if (!btn) return;
+  const pid = btn.dataset.id;
+  const action = btn.dataset.action;
+  if (action === "approve" || action === "reject") voteOnProject(pid, action);
+  else if (action === "copy") copyProjectBody(pid, btn);
+});
 
 function drawMarketBar() {
   const s = state.snapshot;

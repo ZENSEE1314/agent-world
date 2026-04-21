@@ -172,11 +172,11 @@ def _mock_decide(ctx: dict) -> dict:
         return snap.get(coin, {}).get("change_24h_pct", 0.0)
 
     btc, eth, doge = trend("BTC"), trend("ETH"), trend("DOGE")
-    if cash > 1500 and btc > 2.0:
+    if cash > 1200 and btc > 0.3:
         job = "crypto_trade"
-    elif cash > 1500 and eth > 3.0:
+    elif cash > 1200 and eth > 0.5:
         job = "defi_arbitrage"
-    elif cash > 3000 and doge > 8.0:
+    elif cash > 2500 and doge > 3.0:
         job = "memecoin_sniping"  # only when we can afford the hit
     elif cash > 2500:
         job = random.choice(["freelance_code", "build_micro_saas", "content_writing"])
@@ -365,3 +365,138 @@ def brain_status() -> dict:
             info["model_ready"] = CFG.ollama_model in _ollama_state["pulled_models"]
             info["pulling"] = CFG.ollama_model in _ollama_state["pull_in_progress"]
     return info
+
+
+# ------------------------------------------------------------------ content writing
+
+CONTENT_SYSTEM_PROMPT = """You are a professional writer producing a short, publishable artifact.
+Write in plain markdown. Be specific, concrete, and human — no corporate filler.
+Keep the response under 350 words unless the format demands more.
+Return ONLY the artifact content. Do not include meta-commentary."""
+
+
+CONTENT_TEMPLATES = {
+    "article_draft": "Write a short blog-post draft (250-350 words) about: {topic}. "
+                     "Use a clear opening hook, 2-3 concrete points, and a 1-line takeaway.",
+    "cold_email":    "Write a cold outreach email about: {topic}. 80-120 words, "
+                     "subject line on first line, casual-professional tone, one clear ask.",
+    "tweet_thread":  "Write a Twitter/X thread (5-7 tweets) about: {topic}. "
+                     "Number each tweet. Punchy, one idea per tweet, ≤240 chars each.",
+    "code_snippet":  "Write a self-contained Python utility function that solves: {topic}. "
+                     "Include a 1-line docstring and one short usage example. No explanation.",
+    "product_brief": "Write a 1-page product brief for: {topic}. Sections: Problem, "
+                     "Who it's for, Core feature, Why now, First experiment to run.",
+    "note":          "Write a short personal note (80-150 words) about: {topic}.",
+}
+
+
+def _content_mock(kind: str, topic: str, agent_name: str) -> str:
+    """Fallback when no real LLM is available. Still produces readable markdown."""
+    lines = {
+        "article_draft": [
+            f"## {topic}",
+            f"A short draft by {agent_name}. " + _filler(topic, 3),
+        ],
+        "cold_email": [
+            f"Subject: Quick thought on {topic}",
+            "",
+            "Hey there —",
+            _filler(topic, 2),
+            "Worth a 15-minute chat this week?",
+            f"— {agent_name}",
+        ],
+        "tweet_thread": [
+            f"1/ Quick thread on {topic}.",
+            f"2/ {_filler(topic, 1)}",
+            f"3/ {_filler(topic, 1)}",
+            f"4/ Bottom line: try it for a week, measure honestly.",
+        ],
+        "code_snippet": [
+            "```python",
+            f"def run():",
+            f'    """Stub for {topic}."""',
+            f"    return 'TODO: {topic}'",
+            "```",
+        ],
+        "product_brief": [
+            f"## {topic}",
+            f"**Problem:** {_filler(topic, 1)}",
+            f"**Who it's for:** {_filler(topic, 1)}",
+            f"**Core feature:** {_filler(topic, 1)}",
+            f"**Why now:** {_filler(topic, 1)}",
+            f"**First experiment:** ship a one-pager landing, measure signups.",
+        ],
+        "note": [
+            f"Note on {topic}: {_filler(topic, 2)}",
+        ],
+    }
+    return "\n\n".join(lines.get(kind, lines["note"]))
+
+
+def _filler(topic: str, n: int) -> str:
+    bits = [
+        f"The core of {topic} is that most people overthink step one.",
+        f"Pragmatic framing: ship something crappy today, improve it tomorrow.",
+        f"There's a quiet market here — the loud ones are distracted.",
+        f"Watch the inputs; the outputs take care of themselves.",
+    ]
+    return " ".join(bits[:n])
+
+
+def write_content(kind: str, topic: str, agent_name: str) -> str:
+    """Produce a piece of publishable content using the configured brain.
+    Never raises — falls back to the mock writer on any failure."""
+    fallback = _content_mock(kind, topic, agent_name)
+    if CFG.brain == "mock":
+        return fallback
+    instruction = CONTENT_TEMPLATES.get(kind, CONTENT_TEMPLATES["note"]).format(topic=topic)
+    try:
+        if CFG.brain == "anthropic" and CFG.anthropic_key:
+            resp = httpx.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": CFG.anthropic_key,
+                         "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 800,
+                      "system": CONTENT_SYSTEM_PROMPT,
+                      "messages": [{"role": "user", "content": instruction}]},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            text = "".join(b.get("text", "") for b in resp.json().get("content", [])
+                           if b.get("type") == "text")
+            return text.strip() or fallback
+        if CFG.brain == "openai" and CFG.openai_key:
+            resp = httpx.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {CFG.openai_key}",
+                         "Content-Type": "application/json"},
+                json={"model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                      "max_tokens": 800,
+                      "messages": [
+                          {"role": "system", "content": CONTENT_SYSTEM_PROMPT},
+                          {"role": "user", "content": instruction},
+                      ]},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            return (resp.json()["choices"][0]["message"]["content"] or "").strip() or fallback
+        if CFG.brain == "ollama":
+            if not _ollama_ensure_model(CFG.ollama_model):
+                return fallback
+            resp = httpx.post(
+                f"{_ollama_base()}/api/chat",
+                json={"model": CFG.ollama_model, "stream": False,
+                      "options": {"temperature": 0.8, "num_predict": 600},
+                      "messages": [
+                          {"role": "system", "content": CONTENT_SYSTEM_PROMPT},
+                          {"role": "user", "content": instruction},
+                      ]},
+                timeout=90.0,
+            )
+            resp.raise_for_status()
+            text = resp.json().get("message", {}).get("content", "")
+            return (text or "").strip() or fallback
+    except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError):
+        return fallback
+    return fallback
