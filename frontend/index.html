@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Agent World — God View</title>
+<meta name="viewport" content="width=1280" />
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🌍</span>
+    <div>
+      <h1>Agent World</h1>
+      <p class="sub">God View · autonomous survival ecosystem</p>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><span class="lbl">Tick</span><span id="m-tick" class="val">0</span></div>
+    <div class="metric"><span class="lbl">Brain</span><span id="m-brain" class="val">—</span></div>
+    <div class="metric"><span class="lbl">Alive</span><span id="m-alive" class="val">0</span></div>
+    <div class="metric"><span class="lbl">Total $ (real)</span><span id="m-real" class="val">$0.00</span></div>
+    <div class="metric"><span class="lbl">WS</span><span id="m-ws" class="val ws-off">off</span></div>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="world">
+    <div class="world-toolbar">
+      <h2>World</h2>
+      <div class="tools">
+        <button id="btn-add-house" class="plus" title="Add house">➕ House</button>
+        <button id="btn-add-agent" class="plus" title="Add agent">➕ Agent</button>
+      </div>
+    </div>
+    <canvas id="world-canvas" width="1100" height="760"></canvas>
+  </section>
+
+  <aside class="side">
+    <section class="card">
+      <h3>🏆 Leaderboard</h3>
+      <div id="leaderboard" class="leaderboard"></div>
+    </section>
+
+    <section class="card">
+      <h3>👥 Agents</h3>
+      <div id="agents-list" class="agents-list"></div>
+    </section>
+
+    <section class="card">
+      <h3>📜 Live Log</h3>
+      <div id="log-feed" class="log-feed"></div>
+    </section>
+
+    <section class="card">
+      <h3>💬 Chat Stream</h3>
+      <div id="chat-feed" class="chat-feed"></div>
+    </section>
+
+    <section class="card">
+      <h3>⚡ Divine Command</h3>
+      <form id="divine-form" class="divine-form">
+        <input id="divine-text" maxlength="480" placeholder='e.g. "Everyone focus on freelance work today"' />
+        <button type="submit">Proclaim</button>
+      </form>
+      <div id="divine-history" class="divine-history"></div>
+    </section>
+  </aside>
+</main>
+
+<!-- Modal: Add agent -->
+<div id="modal-agent" class="modal hidden">
+  <div class="modal-body">
+    <h3>Spawn a new agent</h3>
+    <form id="form-agent">
+      <label>Name<input name="name" required maxlength="40" placeholder="e.g. Poseidon" /></label>
+      <label>Avatar<input name="avatar" maxlength="4" placeholder="🌊" /></label>
+      <label>Role
+        <select name="role">
+          <option value="worker">Worker</option>
+          <option value="mentor">Mentor</option>
+        </select>
+      </label>
+      <label>Personality
+        <textarea name="personality" maxlength="240" rows="3"
+                  placeholder="One sentence about how they think/act"></textarea>
+      </label>
+      <div class="row">
+        <button type="button" data-close>Cancel</button>
+        <button type="submit" class="primary">Spawn</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Add house -->
+<div id="modal-house" class="modal hidden">
+  <div class="modal-body">
+    <h3>Build a new house</h3>
+    <form id="form-house">
+      <label>Style
+        <select name="style">
+          <option value="cottage">Cottage</option>
+          <option value="office">Office</option>
+          <option value="tower">Tower</option>
+          <option value="shack">Shack</option>
+        </select>
+      </label>
+      <label>Color<input name="color" placeholder="#ffcc99 (optional)" /></label>
+      <div class="row">
+        <button type="button" data-close>Cancel</button>
+        <button type="submit" class="primary">Build</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

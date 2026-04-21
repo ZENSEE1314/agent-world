@@ -1,0 +1,328 @@
+"""WorldEngine: owns houses + agents, runs the tick loop, routes decisions."""
+from __future__ import annotations
+
+import asyncio
+import random
+import time
+from dataclasses import asdict
+from pathlib import Path
+from threading import Lock
+from typing import Callable, Dict, List, Optional
+
+from .agent import Agent, House
+from .brain import decide
+from .config import CFG
+from .economy import EconomyManager
+from .jobs import JOBS, list_jobs, run_job
+from .logger import log, recent, recent_for
+from .messaging import MessageBus
+
+
+HOUSE_COLORS = ["#f6b6c3", "#f7d488", "#a6d4a1", "#9ecbe8",
+                "#c8a5e3", "#f0a48a", "#b8d3a8", "#e9c5a0"]
+
+
+DEFAULT_AGENTS = [
+    # (id,     name,       personality,                                    role,      avatar)
+    ("hermes", "Hermes",    "Patient mentor, explains tradeoffs clearly.",  "mentor",  "🧙"),
+    ("athena", "Athena",    "Strategic, prefers steady high-value jobs.",   "worker",  "🦉"),
+    ("apollo", "Apollo",    "Bold creator, loves building micro-SaaS.",     "worker",  "☀️"),
+    ("artemis","Artemis",   "Sharp scout, hunts arbitrage opportunities.",  "worker",  "🏹"),
+    ("ares",   "Ares",      "Risk taker, chases high-variance wins.",       "worker",  "⚔️"),
+    ("dionysus","Dionysus", "Social butterfly, builds teams and trades.",   "worker",  "🍇"),
+    ("hera",   "Hera",      "Disciplined, never lets hunger drop below 50.","worker",  "👑"),
+]
+
+
+class WorldEngine:
+    def __init__(self) -> None:
+        self.houses: Dict[str, House] = {}
+        self.agents: Dict[str, Agent] = {}
+        self.economy = EconomyManager()
+        self.bus = MessageBus()
+        self.tick_no: int = 0
+        self.started_at: float = time.time()
+        self.divine_commands: List[dict] = []
+        self._lock = Lock()
+        self._listeners: List[Callable[[dict], None]] = []
+        self._seed_world()
+
+    # ---- setup -------------------------------------------------------------
+
+    def _seed_world(self) -> None:
+        # Six starter houses in a friendly grid
+        positions = [(200, 200), (500, 180), (800, 220),
+                     (220, 500), (540, 520), (820, 500)]
+        for i, (x, y) in enumerate(positions):
+            color = HOUSE_COLORS[i % len(HOUSE_COLORS)]
+            self.add_house(f"house_{i+1}", x, y, color=color, log_it=False)
+        # Seven starter agents — Hermes + 6 workers
+        house_ids = list(self.houses.keys())
+        for i, (aid, name, personality, role, avatar) in enumerate(DEFAULT_AGENTS):
+            house = house_ids[i % len(house_ids)] if house_ids else None
+            self.add_agent(aid, name, personality, role=role, avatar=avatar,
+                           house_id=house, log_it=False)
+
+    # ---- mutation ----------------------------------------------------------
+
+    def add_house(self, house_id: Optional[str] = None, x: Optional[int] = None,
+                  y: Optional[int] = None, color: Optional[str] = None,
+                  style: str = "cottage", log_it: bool = True) -> House:
+        with self._lock:
+            if house_id is None:
+                idx = len(self.houses) + 1
+                while f"house_{idx}" in self.houses:
+                    idx += 1
+                house_id = f"house_{idx}"
+            if x is None or y is None:
+                x = random.randint(150, 950)
+                y = random.randint(150, 620)
+            if color is None:
+                color = random.choice(HOUSE_COLORS)
+            h = House(id=house_id, x=x, y=y, color=color, style=style)
+            self.houses[house_id] = h
+        if log_it:
+            log("world", "spawn", f"new house {house_id} at ({x},{y})")
+            self._emit_event({"type": "house_added", "house": asdict(h)})
+        return h
+
+    def add_agent(self, agent_id: Optional[str] = None, name: Optional[str] = None,
+                  personality: str = "", role: str = "worker",
+                  avatar: str = "🙂", house_id: Optional[str] = None,
+                  log_it: bool = True) -> Agent:
+        with self._lock:
+            if agent_id is None:
+                base = (name or "agent").lower().replace(" ", "_") or "agent"
+                agent_id = base
+                n = 2
+                while agent_id in self.agents:
+                    agent_id = f"{base}_{n}"
+                    n += 1
+            if name is None:
+                name = agent_id.capitalize()
+            if house_id is None and self.houses:
+                # Pick the house with the fewest residents
+                occupancy: Dict[str, int] = {h: 0 for h in self.houses}
+                for a in self.agents.values():
+                    if a.house_id in occupancy:
+                        occupancy[a.house_id] += 1
+                house_id = min(occupancy, key=lambda h: occupancy[h])
+            ag = Agent(id=agent_id, name=name, personality=personality,
+                       role=role, avatar=avatar, house_id=house_id)
+            self.agents[agent_id] = ag
+            self.economy.register(agent_id)
+            self.bus.ensure_inbox(agent_id)
+        if log_it:
+            log(agent_id, "birth", f"{name} joined the world")
+            self._emit_event({"type": "agent_added",
+                              "agent": ag.public_state(self.economy.snapshot())})
+        return ag
+
+    def remove_agent(self, agent_id: str) -> None:
+        with self._lock:
+            self.agents.pop(agent_id, None)
+            self.economy.remove(agent_id)
+            self.bus.forget(agent_id)
+        log("world", "remove", f"agent {agent_id} removed")
+
+    def divine_command(self, text: str) -> dict:
+        entry = {"ts": time.time(), "text": text}
+        self.divine_commands.append(entry)
+        if len(self.divine_commands) > 20:
+            self.divine_commands = self.divine_commands[-20:]
+        log("world", "divine", f"Creator says: {text}")
+        # Broadcast to all alive agents
+        for aid, agent in self.agents.items():
+            if agent.alive:
+                self.bus.send("creator", aid, text, kind="divine")
+        return entry
+
+    # ---- event stream ------------------------------------------------------
+
+    def on_event(self, cb: Callable[[dict], None]) -> None:
+        self._listeners.append(cb)
+
+    def _emit_event(self, evt: dict) -> None:
+        for cb in list(self._listeners):
+            try:
+                cb(evt)
+            except Exception:
+                pass  # listeners must not break the engine
+
+    # ---- snapshots ---------------------------------------------------------
+
+    def snapshot(self) -> dict:
+        econ = self.economy.snapshot()
+        agents = [a.public_state(econ) for a in self.agents.values()]
+        houses = [asdict(h) for h in self.houses.values()]
+        return {
+            "tick": self.tick_no,
+            "started_at": self.started_at,
+            "now": time.time(),
+            "brain": CFG.brain,
+            "sim_speed": CFG.sim_speed,
+            "tick_seconds": CFG.tick_seconds,
+            "houses": houses,
+            "agents": agents,
+            "jobs": list_jobs(),
+            "leaderboard": self.economy.leaderboard(),
+            "messages": self.bus.recent(40),
+            "logs": recent(80),
+            "divine": self.divine_commands[-5:],
+        }
+
+    # ---- tick loop ---------------------------------------------------------
+
+    def _build_ctx(self, agent: Agent) -> dict:
+        econ = self.economy.get(agent.id)
+        peers = [a.id for a in self.agents.values()
+                 if a.id != agent.id and a.alive]
+        inbox = self.bus.drain(agent.id, max_n=6)
+        return {
+            "id": agent.id,
+            "name": agent.name,
+            "personality": agent.personality,
+            "role": agent.role,
+            "health": int(agent.health),
+            "hunger": int(agent.hunger),
+            "cash": econ.cash,
+            "real_usd": round(econ.real_value_usd, 2),
+            "skill_multiplier": agent.skill_multiplier,
+            "peers": peers,
+            "inbox": inbox,
+            "jobs": list(JOBS.keys()),
+            "recent_actions": agent.recent_actions,
+        }
+
+    def _apply_decision(self, agent: Agent, decision: dict) -> None:
+        action = decision.get("action", "idle")
+        reason = decision.get("reason", "")
+
+        if action == "work":
+            job_id = decision.get("job") or random.choice(list(JOBS.keys()))
+            result = run_job(job_id, skill_multiplier=agent.skill_multiplier)
+            if result.success:
+                self.economy.credit_work(agent.id, result.real_usd, reason=result.job)
+                agent.remember_action(f"worked:{job_id}")
+                agent.append_memory("work-log",
+                    f"{job_id} ✓ +${result.real_usd:.2f} real ({result.note})")
+            else:
+                log(agent.id, "work", f"{job_id} failed — {result.note}")
+                agent.remember_action(f"work-fail:{job_id}")
+                agent.append_memory("work-log", f"{job_id} ✗ {result.note}")
+            return
+
+        if action == "eat":
+            if self.economy.buy_food(agent.id):
+                agent.feed()
+                agent.remember_action("ate")
+            else:
+                # Too broke — fall back to safe work
+                result = run_job("data_labeling", skill_multiplier=agent.skill_multiplier)
+                if result.success:
+                    self.economy.credit_work(agent.id, result.real_usd, reason=result.job)
+                agent.remember_action("broke-fallback-work")
+            return
+
+        if action == "ask_mentor":
+            target_id = decision.get("target", "hermes")
+            mentor = self.agents.get(target_id)
+            if mentor and mentor.alive and mentor.role == "mentor":
+                topic = decision.get("topic") or "work"
+                self.bus.send(agent.id, mentor.id,
+                              f"Can you help me with {topic}?",
+                              kind="knowledge_request", topic=topic)
+                agent.knowledge_requests_sent += 1
+                agent.remember_action(f"asked-mentor:{topic}")
+                log(agent.id, "ask", f"sent knowledge request to {mentor.name} ({topic})")
+            else:
+                agent.remember_action("ask-mentor-failed")
+            return
+
+        if action == "teach":
+            target_id = decision.get("target")
+            if target_id and target_id in self.agents and self.agents[target_id].alive:
+                student = self.agents[target_id]
+                student.receive_mentorship(multiplier=1.5, ticks=10)
+                agent.knowledge_requests_answered += 1
+                self.bus.send(agent.id, student.id,
+                              "Here's a trick I learned — your skill is boosted.",
+                              kind="mentorship")
+                log(agent.id, "teach", f"boosted {student.name} (×1.5 for 10 ticks)")
+                agent.remember_action(f"taught:{target_id}")
+            return
+
+        if action == "chat":
+            target_id = decision.get("target")
+            text = decision.get("text", "Hey, how's it going?")[:240]
+            if target_id and target_id in self.agents:
+                self.bus.send(agent.id, target_id, text, kind="chat")
+                agent.remember_action(f"chat:{target_id}")
+            return
+
+        if action == "broadcast":
+            text = decision.get("text", "Hello, world.")[:240]
+            self.bus.broadcast(agent.id, text, kind="broadcast")
+            agent.remember_action("broadcast")
+            return
+
+        if action == "gift":
+            target_id = decision.get("target")
+            try:
+                amount = int(decision.get("amount", 50))
+            except (TypeError, ValueError):
+                amount = 50
+            if target_id and target_id in self.agents:
+                self.economy.transfer(agent.id, target_id, amount, reason="gift")
+                agent.remember_action(f"gift:{target_id}:${amount}")
+            return
+
+        if action == "build_project":
+            topic = decision.get("topic") or random.choice(
+                ["notes", "plan", "log", "idea", "reflection"])
+            path = agent.build_project(topic)
+            log(agent.id, "build", f"shipped project → {path}")
+            agent.remember_action(f"built:{topic}")
+            return
+
+        # idle
+        agent.remember_action("idle")
+
+    async def tick(self) -> dict:
+        self.tick_no += 1
+        # 1. Decay everyone first
+        for agent in list(self.agents.values()):
+            agent.decay()
+        # 2. Remove dead agents (but keep them in list for one tick so UI sees death)
+        # 3. Decide & act
+        for agent in list(self.agents.values()):
+            if not agent.alive:
+                continue
+            ctx = self._build_ctx(agent)
+            try:
+                decision = decide(ctx)
+            except Exception as e:
+                decision = {"action": "idle", "reason": f"brain error: {e}"}
+                log(agent.id, "error", f"brain crashed: {e}")
+            try:
+                self._apply_decision(agent, decision)
+            except Exception as e:
+                log(agent.id, "error", f"action crashed: {e}")
+        # 4. Clean up the truly dead
+        dead = [aid for aid, a in self.agents.items() if not a.alive]
+        # Keep them in the world but frozen — the UI shows them as tombstones.
+        snap = self.snapshot()
+        self._emit_event({"type": "tick", "snapshot": snap})
+        return snap
+
+    async def run_forever(self) -> None:
+        while True:
+            try:
+                await self.tick()
+            except Exception as e:
+                log("world", "error", f"tick crashed: {e}")
+            await asyncio.sleep(CFG.tick_seconds)
+
+
+# Global singleton
+WORLD = WorldEngine()

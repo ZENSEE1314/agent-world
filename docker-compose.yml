@@ -1,0 +1,32 @@
+services:
+  agent-world:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      BRAIN: ${BRAIN:-mock}
+      SIM_SPEED: ${SIM_SPEED:-60}
+      TICK_SECONDS: ${TICK_SECONDS:-3}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma2:2b}
+    volumes:
+      - ./projects:/app/projects
+      - ./memory:/app/memory
+      - ./logs:/app/logs
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    # Uncomment to auto-pull the default model on start:
+    # entrypoint: /bin/sh
+    # command: -c "ollama serve & sleep 5 && ollama pull gemma2:2b && wait"
+
+volumes:
+  ollama-data: {}
