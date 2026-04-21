@@ -40,15 +40,25 @@ class EconomyManager:
     # ---- transactions -------------------------------------------------------
 
     def credit_work(self, agent_id: str, real_usd: float, reason: str = "work") -> int:
-        """Convert real-world $ to in-world $ via the 10x multiplier. Returns in-world $ credited."""
+        """Apply the 10x multiplier to real-world P&L. Positive real_usd credits,
+        negative real_usd debits (symmetric rule — losing trades hurt). Cash is
+        clamped at 0 so agents can't go below zero in-world."""
         in_world = int(round(real_usd * CFG.real_to_game_multiplier))
         with self._lock:
             l = self._ledgers[agent_id]
-            l.cash += in_world
-            l.total_earned += in_world
             l.real_value_usd += real_usd
-        log(agent_id, "earn", f"+${in_world} ({reason}; real ${real_usd:.2f})",
-            cash_delta=in_world, real_usd=real_usd)
+            if in_world >= 0:
+                l.cash += in_world
+                l.total_earned += in_world
+                kind = "earn"
+                msg = f"+${in_world} ({reason}; real ${real_usd:.2f})"
+            else:
+                debit = min(l.cash, -in_world)  # can't go negative
+                l.cash -= debit
+                l.total_spent += debit
+                kind = "loss"
+                msg = f"-${debit} ({reason}; real ${real_usd:.2f})"
+        log(agent_id, kind, msg, cash_delta=in_world, real_usd=real_usd)
         return in_world
 
     def buy_food(self, agent_id: str) -> bool:

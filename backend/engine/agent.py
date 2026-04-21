@@ -35,11 +35,14 @@ class Agent:
     hunger: float = float(CFG.max_hunger)
     alive: bool = True
     # Skill / mentorship
-    skill_multiplier: float = 1.0
+    skill_multiplier: float = 1.0       # transient mentorship boost
+    skill_floor: float = 1.0            # earned-over-time base (drifts with experience)
     mentor_ticks: int = 0
     # Memory
     recent_actions: List[str] = field(default_factory=list)
+    recent_outcomes: List[str] = field(default_factory=list)  # "win:+$21.30" / "loss:-$8.40"
     projects_built: int = 0
+    reflections_written: int = 0
     knowledge_requests_sent: int = 0
     knowledge_requests_answered: int = 0
     # Bookkeeping
@@ -71,7 +74,7 @@ class Agent:
         self.hunger = min(float(CFG.max_hunger), self.hunger + amount)
 
     def receive_mentorship(self, multiplier: float = 1.5, ticks: int = 8) -> None:
-        self.skill_multiplier = multiplier
+        self.skill_multiplier = max(self.skill_floor, multiplier)
         self.mentor_ticks = ticks
 
     def remember_action(self, label: str) -> None:
@@ -79,6 +82,21 @@ class Agent:
         if len(self.recent_actions) > 20:
             self.recent_actions = self.recent_actions[-20:]
         self.last_action = label
+
+    def remember_outcome(self, label: str) -> None:
+        self.recent_outcomes.append(label)
+        if len(self.recent_outcomes) > 20:
+            self.recent_outcomes = self.recent_outcomes[-20:]
+
+    def nudge_skill(self, delta: float) -> None:
+        """Slow drift of the skill floor — wins push up, losses push down."""
+        self.skill_floor = max(0.7, min(1.6, self.skill_floor + delta))
+        if self.mentor_ticks == 0:
+            self.skill_multiplier = self.skill_floor
+
+    def write_reflection(self, topic: str, text: str) -> None:
+        self.reflections_written += 1
+        self.append_memory(f"reflections-{topic}", text)
 
     # ---- memory (Obsidian-friendly) ----------------------------------------
 
@@ -129,9 +147,11 @@ class Agent:
             "health": round(self.health, 1),
             "hunger": round(self.hunger, 1),
             "skill_multiplier": round(self.skill_multiplier, 2),
+            "skill_floor": round(self.skill_floor, 2),
             "mentor_ticks": self.mentor_ticks,
             "last_action": self.last_action,
             "projects_built": self.projects_built,
+            "reflections_written": self.reflections_written,
             "knowledge_sent": self.knowledge_requests_sent,
             "knowledge_answered": self.knowledge_requests_answered,
             "cash": money.get("cash", 0),

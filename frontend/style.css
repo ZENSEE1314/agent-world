@@ -55,6 +55,39 @@ h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 .val.ws-off { color: var(--bad); }
 .val.ws-on { color: var(--good); }
 
+/* -------- market ticker -------- */
+.market-bar {
+  display: flex; gap: 14px;
+  padding: 8px 22px;
+  background: linear-gradient(180deg, rgba(26,33,66,.7), rgba(12,16,32,.4));
+  border-bottom: 1px solid var(--edge);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.market-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 999px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+}
+.market-pill .sym { font-weight: 600; color: var(--ink); }
+.market-pill .price { color: var(--ink-dim); }
+.market-pill .chg { font-weight: 600; font-variant-numeric: tabular-nums; }
+.market-pill .chg.up { color: var(--good); }
+.market-pill .chg.down { color: var(--bad); }
+.market-pill .chg.flat { color: var(--ink-dim); }
+.brain-pill {
+  margin-left: auto;
+  padding: 3px 10px; border-radius: 999px;
+  background: rgba(176,122,255,.12);
+  border: 1px solid rgba(176,122,255,.3);
+  color: var(--accent-2);
+  font-weight: 600;
+}
+.brain-pill.warn { background: rgba(251,191,36,.14); border-color: rgba(251,191,36,.3); color: var(--warn); }
+
 /* -------- layout -------- */
 .layout {
   display: grid;
