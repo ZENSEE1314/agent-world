@@ -62,11 +62,21 @@ def _coerce_decision(parsed: Optional[dict], fallback: dict) -> dict:
 SYSTEM_PROMPT = """You are an autonomous survival agent in a 2D simulated world.
 You must stay alive (hunger > 0, health > 0) AND grow your real-world $ by producing real value.
 
+INCOME PILLARS available to you:
+  1. Productized service / micro-SaaS — `launch_saas` is a one-shot bet that, if
+     it sticks, pays recurring real $/tick (MRR) for many ticks. Best long-term ROI.
+  2. Content pipeline — `build_project` ships an artifact (article_draft,
+     cold_email, tweet_thread, code_snippet, product_brief). Approved artifacts
+     pay royalties + may seed a small long-tail stream.
+  3. Automated arbitrage — `pod_listing`, `freelance_bid`, `affiliate_promo`,
+     `ecom_dropship`, `defi_arbitrage`. Small per-shot wins, low-to-medium risk.
+  4. Trading bots — `crypto_trade` (BTC), `memecoin_sniping` (DOGE). Real-time
+     prices; LOSSES hit cash at the 10x multiplier just like gains.
+
 HARD RULES:
 - Food costs $300 and restores hunger. If hunger < 30, prioritize eating.
-- Crypto jobs (crypto_trade, defi_arbitrage, memecoin_sniping) can LOSE real money when the
-  market moves against you. Losses hit your cash at the 10x multiplier, just like gains.
-- Safe jobs: data_labeling (boring, reliable), content_writing, freelance_code.
+- Crypto jobs and ecom_dropship can LOSE real money when conditions move against you.
+- `data_labeling` is boring but never loses — fall back here when broke.
 - Use the LIVE market data in the user prompt — don't trade BTC long if 24h is -7%.
 - Mentorship from Hermes boosts your job multiplier for a few ticks.
 - You can chat, broadcast, gift cash, or build projects (saved to disk).
@@ -171,6 +181,12 @@ def _mock_decide(ctx: dict) -> dict:
         return {"action": "build_project", "topic": random.choice(topics),
                 "reason": "spare cycles — shipping something"}
 
+    # Occasionally roll the dice on a SaaS launch — best long-term ROI but it
+    # costs real $ when the launch flops.
+    if cash > 2000 and random.random() < 0.06:
+        return {"action": "work", "job": "launch_saas",
+                "reason": "betting on recurring MRR"}
+
     # default: work. Use live market trend to pick.
     def trend(coin: str) -> float:
         return snap.get(coin, {}).get("change_24h_pct", 0.0)
@@ -184,7 +200,18 @@ def _mock_decide(ctx: dict) -> dict:
         return {"action": "work", "job": best_job,
                 "reason": f"btc {btc:+.1f}% eth {eth:+.1f}% doge {doge:+.1f}% "
                           f"→ pick {best_job}"}
-    # Nothing looks good → build something reviewable instead.
+
+    # No clear trade signal: spread the bets across the low-risk arbitrage jobs
+    # so all four income pillars stay active even with the mock brain.
+    if random.random() < 0.65:
+        arb_job = random.choice([
+            "pod_listing", "freelance_bid", "affiliate_promo",
+            "ecom_dropship", "data_labeling",
+        ])
+        return {"action": "work", "job": arb_job,
+                "reason": f"flat market (btc {btc:+.1f}%) → safe arbitrage: {arb_job}"}
+
+    # Otherwise build something reviewable for the content pipeline.
     return {"action": "build_project",
             "topic": random.choice([
                 "freelance pricing for solo developers",
