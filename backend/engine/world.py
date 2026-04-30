@@ -14,6 +14,7 @@ from .agent import Agent, House
 from .brain import brain_status, decide, write_content
 from .config import CFG
 from .economy import EconomyManager
+from .income import LEDGER as INCOME_LEDGER
 from .jobs import JOBS, list_jobs, run_job
 from .logger import log, recent, recent_for
 from .messaging import MessageBus
@@ -159,6 +160,7 @@ class WorldEngine:
                 self.bus.ensure_inbox(aid)
             PAPER_BOOK.reset()
             PROJECT_STORE.reset()
+            INCOME_LEDGER.reset()
             _logger.reset()
         log("world", "reset", "world state wiped — fresh start")
         snap = self.snapshot()
@@ -209,6 +211,7 @@ class WorldEngine:
             "jobs": list_jobs(),
             "market": market.snapshot(),
             "paper": PAPER_BOOK.snapshot(),
+            "businesses": INCOME_LEDGER.snapshot(),
             "review_queue": [
                 {
                     "id": p.id, "agent_id": p.agent_id, "agent_name": p.agent_name,
@@ -254,6 +257,28 @@ class WorldEngine:
 
         if action == "work":
             job_id = decision.get("job") or random.choice(list(JOBS.keys()))
+            # SaaS launches are special: they create a Product that pays recurring
+            # MRR on every subsequent tick (handled at the top of _tick_sync).
+            if job_id == "launch_saas":
+                outcome = INCOME_LEDGER.launch_saas(
+                    agent.id, self.tick_no,
+                    skill_multiplier=agent.skill_multiplier,
+                )
+                if outcome["ok"]:
+                    agent.remember_action("launched:saas")
+                    agent.remember_outcome(f"launch:+MRR${outcome['mrr']:.2f}/tick")
+                    agent.nudge_skill(+0.02)
+                    agent.append_memory("saas-log",
+                        f"{outcome['name']} ✓ MRR ${outcome['mrr']:.2f}/tick churn {outcome['churn']:.1%}")
+                    log(agent.id, "launch", outcome["note"])
+                else:
+                    self.economy.credit_work(agent.id, outcome["real_usd"], reason="saas_launch_fail")
+                    agent.remember_action("launch-fail:saas")
+                    agent.remember_outcome(f"loss:${outcome['real_usd']:.2f}:launch_saas")
+                    agent.nudge_skill(-0.015)
+                    agent.append_memory("saas-log", f"✗ {outcome['note']}")
+                return
+
             # Crypto-style jobs route through paper trading at real Coingecko prices.
             # Non-crypto jobs keep the old deterministic-ish RNG payout.
             if job_id in JOB_TO_COIN:
@@ -440,6 +465,14 @@ class WorldEngine:
     def _tick_sync(self) -> None:
         """Synchronous tick body — safe to run in a worker thread."""
         self.tick_no += 1
+        # 0. Pay out recurring real-USD income from launched SaaS / approved
+        #    content — pillars 1 and 2's long tail.
+        for payout in INCOME_LEDGER.tick_recurring(self.tick_no):
+            agent = self.agents.get(payout.agent_id)
+            if agent is None:
+                continue
+            self.economy.credit_work(agent.id, payout.real_usd, reason=payout.note)
+            agent.remember_outcome(f"mrr:+${payout.real_usd:.2f}:{payout.product_id}")
         # 1. Close due paper trades (hits Coingecko; blocking OK in thread)
         closed = PAPER_BOOK.close_due(self.tick_no)
         for c in closed:

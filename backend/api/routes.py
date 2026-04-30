@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from ..engine.income import LEDGER as INCOME_LEDGER, royalty_for_kind
 from ..engine.logger import recent, recent_for
 from ..engine.paper_trading import BOOK as PAPER_BOOK
 from ..engine.projects import STORE as PROJECT_STORE
@@ -145,9 +146,25 @@ def review_project(pid: str, body: ReviewIn):
         raise HTTPException(404, "project not found")
     # Nudge the author's skill floor based on the verdict — they learn from YOUR taste.
     agent = WORLD.agents.get(p.agent_id)
+    royalty = 0.0
+    seeded = None
     if agent is not None:
         if body.vote == "approve":
             agent.nudge_skill(+0.05)
+            # Pillar 2 — content pipeline: pay the simulated ad/affiliate royalty
+            # and seed a tiny long-tail recurring stream for evergreen kinds.
+            royalty = royalty_for_kind(p.kind)
+            if royalty > 0:
+                WORLD.economy.credit_work(p.agent_id, royalty,
+                                          reason=f"royalty:{p.kind}")
+                agent.remember_outcome(f"royalty:+${royalty:.2f}:{p.kind}")
+            seeded = INCOME_LEDGER.seed_content_stream(
+                p.agent_id, p.kind, p.id, WORLD.tick_no,
+            )
         else:
             agent.nudge_skill(-0.03)
-    return {"ok": True, "status": p.status}
+    return {
+        "ok": True, "status": p.status,
+        "royalty_real_usd": royalty,
+        "stream_seeded": bool(seeded),
+    }
